@@ -1,0 +1,40 @@
+name: Sweep
+
+on:
+  schedule:
+    - cron: "26 13 * * *"   # daily; best-effort, the next day catches up if one is dropped
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sweep-state
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python test_sweep.py
+      - name: Run sweep
+        env:
+          DISCORD_OPPORTUNITIES_WEBHOOK: ${{ secrets.DISCORD_OPPORTUNITIES_WEBHOOK }}
+        run: python sweep.py
+      - name: Commit state
+        if: always()
+        run: |
+          git config user.name "internship-sweep"
+          git config user.email "actions@users.noreply.github.com"
+          git add state/
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "sweep: update open postings"
+          for i in 1 2 3 4; do
+            git pull --rebase origin main && git push && exit 0
+            sleep $((i * 3))
+          done
+          exit 1
